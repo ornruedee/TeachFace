@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สแกนจุดตรวจ — SPK</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="js/api-config.js"></script>
+<!-- ★ ใช้ Engine เดียวกับ scan.html: TinyFaceDetector (190KB) เร็วกว่า SSD 10x -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.js"></script>
+<style>
+:root{
+  --gold:#f5a623;--g2:#e8951f;--gr:#10b981;
+  --glass:rgba(255,255,255,.06);--b:rgba(255,255,255,.1);
+  --text:#e8edf5;--muted:#7a90b0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Kanit',sans-serif;min-height:100vh;
+  background:radial-gradient(ellipse at 70% 15%,#251800,#1a2000 25%,#0b1e3d 58%,#060e1e 100%);
+  color:var(--text);display:flex;flex-direction:column;align-items:center;
+  padding:16px 14px 60px;overflow-x:hidden;
+}
+.page{width:100%;max-width:440px}
+
+/* ── Nav ── */
+.nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.back{display:inline-flex;align-items:center;gap:5px;color:var(--muted);
+  text-decoration:none;font-size:.82em;padding:6px 13px;border-radius:20px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);transition:.2s}
+.back:hover{color:var(--text);background:rgba(255,255,255,.09)}
+.pg-t{font-size:.88em;font-weight:700;color:#fcd34d}
+
+/* ── Header ── */
+.hdr{text-align:center;margin-bottom:10px}
+.hdr h2{font-size:1.25em;font-weight:700;
+  background:linear-gradient(135deg,#fcd34d,#fff);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hdr p{font-size:.72em;color:var(--muted);margin-top:2px}
+
+/* ── Point Selector Card (เลือกก่อนสแกน) ── */
+.pt-select{
+  background:var(--glass);border:1px solid var(--b);
+  border-radius:14px;padding:12px 14px;margin-bottom:10px;
+}
+.pt-select label{font-size:.75em;font-weight:700;color:#fcd34d;
+  letter-spacing:.04em;display:block;margin-bottom:7px}
+.pt-row{display:flex;gap:7px;align-items:center}
+select.pt-dd{
+  flex:1;padding:10px 12px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(245,166,35,.3);
+  border-radius:11px;color:var(--text);font-size:.88em;
+  font-family:'Kanit',sans-serif;outline:none;
+  color-scheme:dark;cursor:pointer;
+}
+select.pt-dd:focus{border-color:rgba(245,166,35,.7);box-shadow:0 0 0 3px rgba(245,166,35,.12)}
+.pt-badge{
+  padding:7px 14px;border-radius:10px;font-size:.76em;font-weight:700;
+  white-space:nowrap;cursor:default;
+}
+.pt-near{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3)}
+.pt-far {background:rgba(248,113,113,.12);color:#f87171;border:1px solid rgba(248,113,113,.25)}
+.pt-none{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid rgba(255,255,255,.1)}
+
+/* ── Loading strip (เหมือน scan.html) ── */
+.strip{background:var(--glass);border:1px solid var(--b);border-radius:12px;
+  padding:10px 14px;margin-bottom:10px;
+  display:grid;grid-template-columns:auto 1fr;align-items:center;gap:10px}
+.strip-ic{font-size:18px}
+.strip-title{font-size:.78em;font-weight:700;color:#c8d8f0;margin-bottom:3px}
+.prog-track{background:rgba(255,255,255,.08);border-radius:20px;height:5px;overflow:hidden}
+.prog-bar{height:100%;border-radius:20px;width:0%;transition:width .35s ease;
+  background:linear-gradient(90deg,var(--gold),var(--g2))}
+.prog-lbl{font-size:.67em;color:var(--muted);margin-top:4px}
+
+/* ── Camera (เปิดทันที — เหมือน scan.html) ── */
+.cam-wrap{
+  position:relative;border-radius:18px;overflow:hidden;
+  border:2px solid rgba(245,166,35,.3);
+  box-shadow:0 0 35px rgba(245,166,35,.1);
+  background:#050200;
+  aspect-ratio:4/3;
+}
+video{width:100%;height:100%;display:block;transform:scaleX(-1);object-fit:cover;border-radius:16px}
+
+/* Face ring */
+.ring{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-58%);
+  width:158px;height:198px;border-radius:55% 55% 50% 50%;
+  border:2.5px dashed rgba(245,166,35,.4);pointer-events:none;transition:.3s;
+}
+.ring.found{border-style:solid;border-color:rgba(245,166,35,.95);
+  box-shadow:0 0 20px rgba(245,166,35,.45)}
+.ring.seek{border-color:rgba(16,185,129,.7);border-style:solid;animation:rpulse .9s ease infinite}
+
+/* Confidence badge */
+.conf{
+  position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+  background:rgba(4,9,26,.85);border:1px solid rgba(255,255,255,.12);
+  border-radius:30px;padding:5px 16px;font-size:.76em;font-weight:700;
+  backdrop-filter:blur(8px);white-space:nowrap;color:#fcd34d;pointer-events:none;
+}
+
+/* Model loading overlay */
+.model-ov{
+  position:absolute;inset:0;border-radius:16px;
+  background:rgba(4,9,26,.88);backdrop-filter:blur(4px);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  transition:opacity .4s ease;
+}
+.model-ov.hidden{opacity:0;pointer-events:none}
+.model-spin{width:46px;height:46px;border-radius:50%;
+  border:4px solid rgba(245,166,35,.2);border-top-color:var(--gold);
+  animation:spin .8s linear infinite}
+.model-pct{font-size:1.5em;font-weight:700;color:#fcd34d}
+.model-lbl{font-size:.75em;color:var(--muted);text-align:center;padding:0 18px}
+
+/* Start overlay */
+.start-ov{
+  position:absolute;inset:0;border-radius:16px;
+  background:rgba(4,9,26,.82);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  transition:opacity .4s ease;
+}
+.start-ov.hidden{opacity:0;pointer-events:none}
+.start-btn{
+  width:68px;height:68px;border-radius:50%;
+  background:linear-gradient(135deg,var(--gold),var(--g2));
+  border:none;cursor:pointer;font-size:25px;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 28px rgba(245,166,35,.5);
+  animation:pulse 2s ease infinite;transition:.25s;
+}
+.start-btn:hover{transform:scale(1.1);animation:none}
+.start-btn:disabled{background:rgba(255,255,255,.1);animation:none;cursor:not-allowed}
+.start-tip{font-size:.78em;color:#fcd34d;font-weight:600;text-align:center;padding:0 16px}
+
+/* GPS chip row */
+.gps-row{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.gps-chip{display:flex;align-items:center;gap:4px;
+  background:var(--glass);border:1px solid var(--b);
+  border-radius:20px;padding:5px 11px;font-size:.7em;flex:1;min-width:100px}
+.gps-chip label{color:var(--muted);margin-right:2px}
+.gps-chip span{font-weight:700}
+.gok{color:#34d399!important}.gerr{color:#f87171!important}
+
+/* ── Match Card (หลังสแกนเจอ) ── */
+.match-card{
+  display:none;background:var(--glass);
+  border:1px solid rgba(245,166,35,.35);
+  border-radius:18px;padding:16px;margin-top:10px;
+  backdrop-filter:blur(16px);animation:fadeup .35s ease;
+}
+.mc-top{display:flex;align-items:center;gap:14px;margin-bottom:14px;
+  padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.07)}
+.mc-photo{width:64px;height:64px;border-radius:12px;object-fit:cover;
+  border:2px solid rgba(245,166,35,.4);flex-shrink:0}
+.mc-photo-placeholder{width:64px;height:64px;border-radius:12px;flex-shrink:0;
+  background:rgba(245,166,35,.12);border:2px solid rgba(245,166,35,.25);
+  display:flex;align-items:center;justify-content:center;font-size:28px}
+.mc-info{flex:1}
+.mc-name{font-size:1.1em;font-weight:700;color:#fcd34d}
+.mc-meta{font-size:.72em;color:var(--muted);margin-top:2px}
+.mc-pt{font-size:.76em;color:#c8d8f0;margin-top:3px;font-weight:600}
+
+/* Report form */
+.report-section label{
+  display:block;font-size:.75em;font-weight:700;
+  color:#94a3b8;margin-bottom:5px;letter-spacing:.03em}
+textarea.rpt-inp{
+  width:100%;padding:11px 13px;min-height:72px;resize:vertical;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  border-radius:12px;color:var(--text);font-size:.86em;
+  font-family:'Kanit',sans-serif;outline:none;transition:.25s;
+}
+textarea.rpt-inp:focus{border-color:rgba(245,166,35,.5);background:rgba(245,166,35,.06)}
+
+.snap-row{display:flex;gap:7px;margin-top:8px;align-items:flex-start}
+.btn-snap{
+  flex:1;padding:10px;border:1.5px dashed rgba(245,166,35,.4);
+  border-radius:11px;background:rgba(245,166,35,.07);
+  color:#fcd34d;font-size:.8em;font-weight:700;
+  font-family:'Kanit',sans-serif;cursor:pointer;transition:.2s;
+}
+.btn-snap:hover{background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.65)}
+.inc-photo{width:70px;height:70px;border-radius:10px;object-fit:cover;
+  border:1px solid rgba(245,166,35,.35);display:none;cursor:pointer}
+
+/* Snap camera overlay */
+.snap-cam-ov{
+  display:none;margin-top:8px;border-radius:14px;overflow:hidden;
+  border:2px solid rgba(245,166,35,.3);background:#050200;
+}
+.snap-cam-ov video{width:100%;display:block;border-radius:12px}
+.snap-cam-ov .snap-controls{
+  display:flex;gap:7px;padding:8px;background:rgba(4,9,26,.8);
+}
+
+.btn-submit{
+  width:100%;padding:13px;margin-top:14px;border:none;border-radius:50px;
+  font-size:15px;font-weight:700;font-family:'Kanit',sans-serif;cursor:pointer;transition:.3s;
+  background:linear-gradient(135deg,var(--gold),var(--g2));color:#fff;
+  box-shadow:0 4px 18px rgba(245,166,35,.4);
+}
+.btn-submit:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(245,166,35,.6)}
+.btn-submit:disabled{background:rgba(255,255,255,.1);color:#475569;box-shadow:none;cursor:not-allowed;transform:none}
+.btn-rescan{
+  width:100%;padding:9px;margin-top:7px;background:transparent;
+  color:var(--muted);border:1px solid rgba(255,255,255,.1);
+  border-radius:50px;font-family:'Kanit',sans-serif;cursor:pointer;transition:.2s;font-size:.86em;
+}
+.btn-rescan:hover{color:var(--text)}
+.save-st{font-size:.73em;color:var(--muted);min-height:18px;text-align:center;margin-top:5px}
+
+@keyframes spin   {to{transform:rotate(360deg)}}
+@keyframes pulse  {0%,100%{box-shadow:0 0 0 0 rgba(245,166,35,.5)}50%{box-shadow:0 0 0 12px rgba(245,166,35,0)}}
+@keyframes rpulse {0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes fadeup {from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page{animation:fadeup .4s ease}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Nav -->
+  <div class="nav">
+    <a href="index.html" class="back">← หน้าหลัก</a>
+    <span class="pg-t">🗺️ สแกนจุดตรวจ</span>
+  </div>
+
+  <div class="hdr">
+    <h2>ตรวจจุดปฏิบัติงาน</h2>
+    <p>เลือกจุดตรวจ → สแกนใบหน้า → รายงาน</p>
+  </div>
+
+  <!-- ★ เลือกจุดตรวจก่อนสแกน (dropdown แทน 3 step) -->
+  <div class="pt-select">
+    <label>📍 เลือกจุดตรวจ</label>
+    <div class="pt-row">
+      <select class="pt-dd" id="ptDD" onchange="onPtChange()">
+        <option value="">— กำลังโหลดจุดตรวจ... —</option>
+      </select>
+      <span class="pt-badge pt-none" id="ptDistBadge">—</span>
+    </div>
+  </div>
+
+  <!-- Loading progress strip -->
+  <div class="strip" id="strip">
+    <div class="strip-ic" id="stripIc">⏳</div>
+    <div>
+      <div class="strip-title" id="stripTitle">กำลังเตรียมระบบ</div>
+      <div class="prog-track"><div class="prog-bar" id="progBar"></div></div>
+      <div class="prog-lbl" id="progLbl">เริ่มต้น...</div>
+    </div>
+  </div>
+
+  <!-- Camera — เปิดทันที ไม่รอ model (เหมือน scan.html) -->
+  <div class="cam-wrap">
+    <video id="video" autoplay muted playsinline></video>
+    <div class="ring" id="ring"></div>
+    <div class="conf" id="conf" style="display:none"></div>
+
+    <!-- Model loading overlay -->
+    <div class="model-ov" id="modelOv">
+      <div class="model-spin"></div>
+      <div class="model-pct" id="modelPct">0%</div>
+      <div class="model-lbl" id="modelLbl">กำลังโหลด AI Model...</div>
+    </div>
+
+    <!-- Start overlay (หลัง model โหลดเสร็จ) -->
+    <div class="start-ov hidden" id="startOv">
+      <button class="start-btn" id="startBtn" onclick="startScan()" disabled>▶</button>
+      <div class="start-tip" id="startTip">กำลังเตรียม...</div>
+    </div>
+  </div>
+
+  <!-- GPS chips -->
+  <div class="gps-row" id="gpsRow" style="display:none">
+    <div class="gps-chip"><label>📍</label><span id="gpsCoord">—</span></div>
+    <div class="gps-chip"><label>ระยะ:</label><span id="gpsDist">—</span></div>
+    <div class="gps-chip"><label>GPS:</label><span id="gpsStatus">—</span></div>
+  </div>
+
+  <!-- Match + Report Card (แสดงหลังสแกนเจอ) -->
+  <div class="match-card" id="matchCard">
+
+    <!-- ─ Verified user ─ -->
+    <div class="mc-top">
+      <div class="mc-photo-placeholder" id="mcPlaceholder">😊</div>
+      <img  class="mc-photo" id="mcPhoto" src="" style="display:none">
+      <div class="mc-info">
+        <div class="mc-name" id="mcName">—</div>
+        <div class="mc-meta" id="mcMeta">—</div>
+        <div class="mc-pt"  id="mcPt">—</div>
+      </div>
+    </div>
+
+    <!-- ─ Report Form ─ -->
+    <div class="report-section">
+      <label>📝 รายงานสถานการณ์ (ระบุ "ปกติ" ถ้าไม่มีเหตุการณ์)</label>
+      <textarea class="rpt-inp" id="incTxt" placeholder="ปกติ / หรือรายงานเหตุการณ์ที่พบ...">ปกติ</textarea>
+
+      <div class="snap-row">
+        <button class="btn-snap" id="btnSnap" onclick="openSnapCam()">
+          📷 ถ่ายภาพประกอบ
+        </button>
+        <img id="incPhoto" class="inc-photo" src="" onclick="this.style.display='none';capturedInc=null" title="แตะเพื่อลบ">
+      </div>
+      <div style="font-size:.68em;color:var(--muted);margin-top:4px" id="snapInfo"></div>
+
+      <!-- กล้องถ่ายภาพประกอบ -->
+      <div class="snap-cam-ov" id="snapCamOv">
+        <video id="snapCam" autoplay muted playsinline></video>
+        <div class="snap-controls">
+          <button class="btn-snap" style="flex:1;border-style:solid" onclick="takeSnap()">📸 ถ่าย</button>
+          <button class="btn-snap" style="flex:0;padding:10px 16px;border-style:solid;border-color:rgba(248,113,113,.4);color:#f87171;background:rgba(248,113,113,.07)" onclick="closeSnapCam()">ยกเลิก</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-submit" id="btnSubmit" onclick="submitPatrol()">✅ บันทึกการตรวจจุด</button>
+    <div class="save-st" id="saveSt"></div>
+    <button class="btn-rescan" onclick="cancelMatch()">🔄 สแกนใหม่ / เปลี่ยนจุดตรวจ</button>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+'use strict';
+// ══════════════════════════════════════════════════════════
+//  CONFIG (เหมือน scan.html ทุกอย่าง)
+// ══════════════════════════════════════════════════════════
+const API_URL   = localStorage.getItem('gasApiUrl') || (typeof GAS_API_URL !== 'undefined' ? GAS_API_URL : '');
+const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const TINY_OPTS = new faceapi.TinyFaceDetectorOptions({inputSize:224, scoreThreshold:0.5});
+const MATCH_THOLD = 0.45;
+const SCAN_MS     = 400;
+
+// State
+let knownUsers  = [];   // [{name, email, descriptors:[Float32Array]}]
+let allPoints   = [];   // จุดตรวจทั้งหมด
+let selectedPt  = null;
+let myGPS       = {lat:null, lng:null, ok:true};
+let loopId      = null;
+let matchedUser = null;
+let capturedFace= null;
+let capturedInc = null;
+let isScanning  = false;
+let modelsOk    = false;
+let facesOk     = false;
+let snapStream  = null;
+
+// DOM
+const video    = document.getElementById('video');
+const ring     = document.getElementById('ring');
+const conf     = document.getElementById('conf');
+const modelOv  = document.getElementById('modelOv');
+const startOv  = document.getElementById('startOv');
+const startBtn = document.getElementById('startBtn');
+const startTip = document.getElementById('startTip');
+const progBar  = document.getElementById('progBar');
+const modelPct = document.getElementById('modelPct');
+const modelLbl = document.getElementById('modelLbl');
+
+// ── Progress ────────────────────────────────────────────
+function setProg(pct, lbl){
+  progBar.style.width = pct+'%';
+  document.getElementById('progLbl').textContent = lbl;
+  modelPct.textContent = pct+'%';
+  modelLbl.textContent = lbl;
+}
+
+// ── Haversine ─────────────────────────────────────────────
+function hav(a,b,c,d){
+  const R=6371,dA=(c-a)*Math.PI/180,dB=(d-b)*Math.PI/180;
+  const e=Math.sin(dA/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dB/2)**2;
+  return R*2*Math.atan2(Math.sqrt(e),Math.sqrt(1-e));
+}
+
+// ── Compress + watermark (เหมือน scan.html) ──────────────
+function compressPhoto(maxW=540, q=0.60){
+  try{
+    const vw=video.videoWidth||480, vh=video.videoHeight||360;
+    const r=Math.min(maxW/vw, maxW/vh, 1);
+    const c=document.createElement('canvas');
+    c.width=Math.round(vw*r); c.height=Math.round(vh*r);
+    const ctx=c.getContext('2d');
+    ctx.save(); ctx.scale(-1,1); ctx.translate(-c.width,0);
+    ctx.drawImage(video,0,0,c.width,c.height); ctx.restore();
+    const ts=new Date().toLocaleString('th-TH',{dateStyle:'short',timeStyle:'medium'});
+    ctx.fillStyle='rgba(0,0,0,.62)'; ctx.fillRect(0,c.height-30,c.width,30);
+    ctx.fillStyle='#fff'; ctx.font='bold 10px Kanit,sans-serif';
+    ctx.fillText(`SPK · ${selectedPt?selectedPt.name:''} · ${ts}`, 4, c.height-17);
+    ctx.fillStyle='#fcd34d'; ctx.font='9px Kanit,sans-serif';
+    ctx.fillText(myGPS.lat?`${myGPS.lat.toFixed(5)}, ${myGPS.lng.toFixed(5)}`:'', 4, c.height-5);
+    return c.toDataURL('image/jpeg', q);
+  }catch(_){ return null; }
+}
+
+// ══════════════════════════════════════════════════════════
+//  INIT — ทำ PARALLEL เหมือน scan.html
+// ══════════════════════════════════════════════════════════
+window.addEventListener('load', async ()=>{
+  if(!API_URL){
+    modelLbl.textContent='❌ ยังไม่ตั้งค่า API';
+    return;
+  }
+
+  // 1. เปิดกล้องทันที (ไม่รออะไร)
+  openCamera();
+
+  // 2. ทำ 3 อย่างพร้อมกัน
+  await Promise.all([
+    doGPS(),
+    loadModels(),
+    loadFaces(),
+    loadPoints()
+  ]);
+
+  showReady();
+});
+
+// ── เปิดกล้องทันที ────────────────────────────────────────
+async function openCamera(){
+  try{
+    const s=await navigator.mediaDevices.getUserMedia(
+      {video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}}
+    );
+    video.srcObject=s;
+  }catch(e){
+    modelLbl.textContent='❌ เปิดกล้องไม่ได้: '+e.message;
+  }
+}
+
+// ── GPS ───────────────────────────────────────────────────
+async function doGPS(){
+  if(!navigator.geolocation){ myGPS.ok=true; return; }
+  return new Promise(resolve=>{
+    navigator.geolocation.getCurrentPosition(pos=>{
+      myGPS.lat=pos.coords.latitude;
+      myGPS.lng=pos.coords.longitude;
+      myGPS.ok=true;
+      // แสดง GPS chips
+      const row=document.getElementById('gpsRow');
+      row.style.display='flex';
+      document.getElementById('gpsCoord').textContent=`${myGPS.lat.toFixed(5)}, ${myGPS.lng.toFixed(5)}`;
+      document.getElementById('gpsDist').textContent='—';
+      document.getElementById('gpsStatus').textContent='✅';
+      document.getElementById('gpsStatus').className='gok';
+      // อัปเดต distance badge ถ้าเลือกจุดแล้ว
+      onPtChange();
+      resolve();
+    }, ()=>{ myGPS.ok=true; resolve(); }, {enableHighAccuracy:true, timeout:10000});
+  });
+}
+
+// ── โหลด Model ★ TinyFaceDetector (เหมือน scan.html) ──────
+async function loadModels(){
+  try{
+    setProg(5,  'โหลด TinyFaceDetector (190KB)...');
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    setProg(38, 'โหลด FaceLandmark Tiny (80KB)...');
+    await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+    setProg(72, 'โหลด FaceRecognition...');
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    setProg(92, '✅ Model พร้อม');
+    modelsOk=true;
+  }catch(e){
+    modelLbl.textContent='❌ โหลด Model ล้มเหลว: '+e.message;
+    throw e;
+  }
+}
+
+// ── โหลดบุคลากร + Pre-compute Float32Array ────────────────
+async function loadFaces(){
+  try{
+    const d=await(await fetch(API_URL+'?action=getKnownFaces')).json();
+    if(d.status==='error') throw new Error(d.message);
+    knownUsers=(d.users||[]).map(u=>({
+      name:        u.name,
+      email:       u.email,
+      // ★ pre-convert เป็น Float32Array ครั้งเดียว ไม่ต้อง convert ทุก frame
+      descriptors: (u.descriptors||[]).map(x=>new Float32Array(x))
+    }));
+    facesOk=true;
+  }catch(e){
+    modelLbl.textContent='❌ โหลดบุคลากรล้มเหลว: '+e.message;
+    throw e;
+  }
+}
+
+// ── โหลดจุดตรวจ → เติม dropdown ──────────────────────────
+async function loadPoints(){
+  try{
+    const d=await(await fetch(API_URL+'?action=getPatrolPoints')).json();
+    allPoints=d.points||[];
+    const dd=document.getElementById('ptDD');
+    dd.innerHTML='<option value="">— เลือกจุดตรวจ —</option>';
+    // จัดกลุ่มตาม category
+    const cats=[...new Set(allPoints.map(p=>p.category))];
+    cats.forEach(cat=>{
+      const grp=document.createElement('optgroup');
+      grp.label=cat;
+      allPoints.filter(p=>p.category===cat).forEach(p=>{
+        const opt=document.createElement('option');
+        opt.value=p.id;
+        opt.textContent=`${catIcon(cat)} ${p.name}`;
+        grp.appendChild(opt);
+      });
+      dd.appendChild(grp);
+    });
+  }catch(e){
+    document.getElementById('ptDD').innerHTML=`<option>❌ โหลดจุดตรวจล้มเหลว</option>`;
+  }
+}
+
+function catIcon(cat){
+  const m={'เวรป้อมยาม':'🏠','อาคารเรียน':'🏫','โรงฝึกงาน':'🔧','สนาม':'⚽','โรงอาหาร':'🍽️'};
+  return m[cat]||'📍';
+}
+
+// ── เปลี่ยนจุดตรวจ ───────────────────────────────────────
+function onPtChange(){
+  const id=document.getElementById('ptDD').value;
+  selectedPt=allPoints.find(p=>p.id===id)||null;
+  const badge=document.getElementById('ptDistBadge');
+
+  if(!selectedPt){
+    badge.textContent='—'; badge.className='pt-badge pt-none';
+    // ไม่ block ปุ่ม (ยังไม่เลือก)
+    return;
+  }
+
+  if(myGPS.lat && selectedPt.lat){
+    const dist=hav(myGPS.lat,myGPS.lng,selectedPt.lat,selectedPt.lng);
+    const distM=(dist*1000).toFixed(0);
+    const inR=dist<=selectedPt.radius;
+
+    badge.textContent=`${distM} ม.`;
+    badge.className='pt-badge '+(inR?'pt-near':'pt-far');
+    document.getElementById('gpsDist').textContent=
+      `${distM} ม. จาก ${selectedPt.name}`;
+
+    // ★ อัปเดต tip ของปุ่มสแกน
+    if(inR){
+      startTip.textContent='✅ อยู่ในรัศมี — แตะเพื่อสแกน';
+      // เปิดปุ่ม (ถ้า model พร้อม)
+      if(modelsOk && facesOk) startBtn.disabled=false;
+    }else{
+      startTip.textContent=`❌ ห่าง ${distM} ม. (ต้องอยู่ใน ${(selectedPt.radius*1000).toFixed(0)} ม.)`;
+      // ★ ไม่ disable ปุ่ม — ปล่อยให้กดได้แต่จะ block ตอน startScan()
+      // (เผื่อ GPS ยังไม่แม่นยำ 100%)
+    }
+  }else{
+    badge.textContent='รอ GPS';
+    badge.className='pt-badge pt-none';
+    startTip.textContent='รอ GPS ก่อนสแกน';
+  }
+}
+
+// ── แสดงสถานะพร้อม ────────────────────────────────────────
+function showReady(){
+  setProg(100,'✅ พร้อมสแกน');
+  // อัปเดต strip
+  document.getElementById('strip').innerHTML=`
+    <div class="strip-ic">✅</div>
+    <div>
+      <div class="strip-title">ระบบพร้อม</div>
+      <div class="prog-lbl">บุคลากร ${knownUsers.length} คน · จุดตรวจ ${allPoints.length} จุด</div>
+    </div>`;
+  // ซ่อน model overlay → แสดง start overlay
+  modelOv.classList.add('hidden');
+  startOv.classList.remove('hidden');
+  startBtn.disabled=false;
+  startTip.textContent='เลือกจุดตรวจ แล้วแตะเพื่อสแกน';
+}
+
+// ══════════════════════════════════════════════════════════
+//  FACE SCAN
+// ══════════════════════════════════════════════════════════
+function startScan(){
+  if(!modelsOk||!facesOk){ alert('ระบบยังไม่พร้อม'); return; }
+
+  if(!selectedPt){
+    Swal.fire({icon:'warning',title:'กรุณาเลือกจุดตรวจก่อน',
+      background:'#0d1e3d',color:'#e8edf5'});
+    return;
+  }
+
+  // ★ ตรวจ GPS ระยะจากจุดตรวจที่เลือก — บล็อกถ้าไกลเกิน
+  if(myGPS.lat && selectedPt.lat && selectedPt.radius > 0){
+    const dist = hav(myGPS.lat, myGPS.lng, selectedPt.lat, selectedPt.lng);
+    if(dist > selectedPt.radius){
+      Swal.fire({
+        icon:'error',
+        title:'❌ คุณอยู่นอกพื้นที่จุดตรวจ',
+        html:`<b>${selectedPt.name}</b><br>
+              ระยะปัจจุบัน: <b style="color:#f87171">${(dist*1000).toFixed(0)} ม.</b><br>
+              รัศมีที่อนุญาต: <b style="color:#34d399">${(selectedPt.radius*1000).toFixed(0)} ม.</b><br>
+              <small style="color:#94a3b8">กรุณาเดินไปที่จุดตรวจก่อนสแกน</small>`,
+        background:'#1e0a0a',color:'#e8edf5',confirmButtonColor:'#ef4444'
+      });
+      return; // ★ หยุดไม่ให้สแกน
+    }
+  }
+
+  startOv.classList.add('hidden');
+  isScanning=true; matchedUser=null; capturedFace=null;
+  conf.style.display='block';
+  conf.textContent='🔍 มองตรงกล้อง...';
+  ring.className='ring seek';
+  startLoop();
+}
+
+// ★ Detection loop — เหมือน scan.html ทุกบรรทัด
+function startLoop(){
+  if(loopId) clearInterval(loopId);
+  loopId=setInterval(async ()=>{
+    if(!isScanning||matchedUser||!video.readyState||video.readyState<2) return;
+    try{
+      // ★ TinyFaceDetector + TinyLandmark → เร็วกว่า SSD 5-10x
+      const det=await faceapi
+        .detectSingleFace(video, TINY_OPTS)
+        .withFaceLandmarks(true)   // true = ใช้ TinyLandmark
+        .withFaceDescriptor();
+
+      if(!det){
+        ring.className='ring';
+        conf.textContent='🔍 มองตรงกล้อง...';
+        return;
+      }
+      ring.className='ring found';
+
+      // ★ เปรียบเทียบกับ Float32Array ที่ pre-compute แล้ว
+      let best=null, bestD=999;
+      for(const u of knownUsers){
+        for(const fd of u.descriptors){
+          const d=faceapi.euclideanDistance(det.descriptor, fd);
+          if(d<bestD){ bestD=d; best=u; }
+        }
+      }
+
+      const confPct=Math.max(0,(1-bestD)*100);
+      const need=Math.round((1-MATCH_THOLD)*100);
+
+      if(best && bestD<MATCH_THOLD){
+        // ✅ Match!
+        clearInterval(loopId);
+        isScanning=false;
+        matchedUser=best;
+        capturedFace=compressPhoto();
+        conf.textContent=`✅ ${best.name} (${confPct.toFixed(0)}%)`;
+        ring.className='ring found';
+        setTimeout(()=>showMatchCard(best,bestD), 120);
+      }else{
+        ring.className='ring seek';
+        conf.textContent=best
+          ?`🔍 ${confPct.toFixed(0)}% / ต้องการ${need}% (${best.name})`
+          :`🔍 ${confPct.toFixed(0)}% / ต้องการ${need}%`;
+      }
+    }catch(e){ console.warn('patrol detect:', e.message); }
+  }, SCAN_MS);
+}
+
+// ── แสดง Match Card + form ──────────────────────────────
+function showMatchCard(user, dist){
+  document.getElementById('matchCard').style.display='block';
+  document.getElementById('mcName').textContent=user.name;
+  document.getElementById('mcMeta').textContent=`ความเหมือน ${((1-dist)*100).toFixed(1)}%`;
+  document.getElementById('mcPt').textContent=`📍 จุดตรวจ: ${selectedPt?selectedPt.name:'—'} (${selectedPt?selectedPt.category:''})`;
+  // รูปภาพ
+  if(capturedFace){
+    document.getElementById('mcPhoto').src=capturedFace;
+    document.getElementById('mcPhoto').style.display='block';
+    document.getElementById('mcPlaceholder').style.display='none';
+  }
+  document.getElementById('incTxt').value='ปกติ';
+  document.getElementById('incPhoto').style.display='none';
+  capturedInc=null;
+  document.getElementById('matchCard').scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+function cancelMatch(){
+  if(loopId) clearInterval(loopId);
+  isScanning=false; matchedUser=null; capturedFace=null; capturedInc=null;
+  document.getElementById('matchCard').style.display='none';
+  ring.className='ring'; conf.style.display='none';
+  document.getElementById('mcPhoto').style.display='none';
+  document.getElementById('mcPlaceholder').style.display='flex';
+  startOv.classList.remove('hidden');
+  startBtn.disabled=false;
+  startTip.textContent='แตะเพื่อสแกนใหม่';
+}
+
+// ══════════════════════════════════════════════════════════
+//  INCIDENT PHOTO
+// ══════════════════════════════════════════════════════════
+async function openSnapCam(){
+  const ov=document.getElementById('snapCamOv');
+  try{
+    snapStream=await navigator.mediaDevices.getUserMedia(
+      {video:{facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720}}}
+    );
+    document.getElementById('snapCam').srcObject=snapStream;
+    ov.style.display='block';
+  }catch(e){ alert('เปิดกล้องไม่ได้: '+e.message); }
+}
+
+function takeSnap(){
+  const v=document.getElementById('snapCam');
+  const c=document.createElement('canvas');
+  const r=Math.min(800/v.videoWidth, 800/v.videoHeight, 1);
+  c.width=Math.round(v.videoWidth*r); c.height=Math.round(v.videoHeight*r);
+  const ctx=c.getContext('2d');
+  ctx.drawImage(v,0,0,c.width,c.height);
+  // watermark
+  const ts=new Date().toLocaleString('th-TH',{dateStyle:'short',timeStyle:'medium'});
+  ctx.fillStyle='rgba(0,0,0,.62)'; ctx.fillRect(0,c.height-28,c.width,28);
+  ctx.fillStyle='#fcd34d'; ctx.font='bold 10px Kanit,sans-serif';
+  ctx.fillText(`SPK · ${selectedPt?selectedPt.name:''} · ${ts}`, 4, c.height-15);
+  ctx.fillStyle='#aad4ff'; ctx.font='9px Kanit,sans-serif';
+  ctx.fillText(myGPS.lat?`${myGPS.lat.toFixed(5)}, ${myGPS.lng.toFixed(5)}`:'', 4, c.height-4);
+  capturedInc=c.toDataURL('image/jpeg',0.65);
+  const ip=document.getElementById('incPhoto');
+  ip.src=capturedInc; ip.style.display='block';
+  const kb=Math.round(capturedInc.length*0.75/1024);
+  document.getElementById('snapInfo').textContent=`ภาพ ~${kb} KB (แตะภาพเพื่อลบ)`;
+  document.getElementById('btnSnap').textContent='📷 ถ่ายภาพใหม่';
+  closeSnapCam();
+}
+
+function closeSnapCam(){
+  if(snapStream){ snapStream.getTracks().forEach(t=>t.stop()); snapStream=null; }
+  document.getElementById('snapCamOv').style.display='none';
+}
+
+// ══════════════════════════════════════════════════════════
+//  SUBMIT — บันทึกการตรวจ
+// ══════════════════════════════════════════════════════════
+async function submitPatrol(){
+  const btn=document.getElementById('btnSubmit');
+  const st =document.getElementById('saveSt');
+  btn.disabled=true; btn.textContent='⏳ กำลังบันทึก...'; st.textContent='';
+
+  // 1. Upload photo (ไม่ block ถ้าล้มเหลว)
+  let photoUrl='';
+  const photoData=capturedInc||capturedFace;
+  if(photoData && API_URL){
+    st.textContent='⬆️ อัปโหลดภาพ...';
+    try{
+      const fn=`patrol_${selectedPt.id}_${Date.now()}.jpg`;
+      const pr=await fetch(API_URL,{method:'POST',
+        body:JSON.stringify({action:'savePhoto',imageBase64:photoData,filename:fn})});
+      const pd=await pr.json();
+      if(pd.status==='ok'){ photoUrl=pd.url; st.textContent=`✅ ภาพ ~${pd.sizeKB||'?'}KB`; }
+      else st.textContent='⚠️ อัปโหลดภาพล้มเหลว — บันทึกต่อ';
+    }catch(_){ st.textContent='⚠️ อัปโหลดภาพล้มเหลว — บันทึกต่อ'; }
+  }
+
+  // 2. บันทึก patrol log
+  const incident=document.getElementById('incTxt').value.trim();
+  const dist=(myGPS.lat&&selectedPt&&selectedPt.lat)
+    ?hav(myGPS.lat,myGPS.lng,selectedPt.lat,selectedPt.lng):0;
+
+  try{
+    const res=await fetch(API_URL,{method:'POST',
+      body:JSON.stringify({
+        action:          'logPatrolScan',
+        name:            matchedUser.name,
+        email:           matchedUser.email||'',
+        patrolPointName: selectedPt.name,
+        patrolCategory:  selectedPt.category,
+        type:            'CHECK',
+        lat:             myGPS.lat,
+        lng:             myGPS.lng,
+        distance:        dist,
+        fakeGPSFlag:     false,
+        incidentReport:  incident,
+        photoUrl:        photoUrl
+      })
+    });
+    const data=await res.json();
+    if(data.status==='error') throw new Error(data.message);
+
+    const hasInc=incident&&incident!=='ปกติ';
+    Swal.fire({
+      icon: hasInc?'warning':'success',
+      title:`บันทึกสำเร็จ${hasInc?' ⚠️ มีรายงาน':''}`,
+      html: `<b>${matchedUser.name}</b> ตรวจ <b>${selectedPt.name}</b><br>เวลา ${data.time} น.`
+           +(hasInc?`<br><span style="color:#fcd34d">รายงาน: ${incident}</span>`:''),
+      background:'#0d1a08', color:'#e8edf5',
+      confirmButtonColor:'#f5a623', confirmButtonText:'ตรวจจุดต่อไป',
+      showCancelButton:true, cancelButtonText:'กลับหน้าหลัก', cancelButtonColor:'#334155'
+    }).then(r=>{
+      if(r.isConfirmed){
+        // ตรวจจุดต่อ — เคลียร์ match แต่คงกล้องไว้
+        cancelMatch();
+      }else{
+        location.href='index.html';
+      }
+    });
+  }catch(e){
+    Swal.fire({icon:'error',title:'❌ บันทึกล้มเหลว',
+      html:`${e.message}<br><small style="color:#94a3b8">ตรวจสอบ GAS URL</small>`,
+      background:'#1e0a0a',color:'#e8edf5',confirmButtonColor:'#ef4444'});
+    btn.disabled=false; btn.textContent='✅ บันทึกการตรวจจุด';
+  }
+}
+</script>
+</body>
+</html>

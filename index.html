@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบลงเวลา — โรงเรียนโซ่พิสัยพิทยาคม</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="js/api-config.js"></script>
+<style>
+:root{--navy:#0b1e3d;--gold:#f5a623;--emerald:#10b981;--indigo:#4361ee;
+  --glass:rgba(255,255,255,0.06);--border:rgba(255,255,255,0.1);--text:#e8edf5;--muted:#7a90b0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Kanit',sans-serif;min-height:100vh;
+  background:radial-gradient(ellipse at 25% 20%,#1a3a6b,#0b1e3d 45%,#060e1e 100%);
+  color:var(--text);display:flex;flex-direction:column;align-items:center;
+  padding:28px 16px 60px;position:relative;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(67,97,238,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(67,97,238,.04) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;width:500px;height:500px;
+  background:radial-gradient(circle,rgba(245,166,35,.1),transparent 70%);
+  bottom:-120px;right:-120px;pointer-events:none;z-index:0}
+.page{position:relative;z-index:1;width:100%;max-width:400px;animation:up .6s cubic-bezier(.34,1.56,.64,1)}
+
+/* Header */
+.hdr{text-align:center;margin-bottom:32px}
+.logo-ring{width:110px;height:110px;margin:0 auto 14px;border-radius:50%;
+  background:rgba(245,166,35,.1);border:2px solid rgba(245,166,35,.3);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  box-shadow:0 0 40px rgba(245,166,35,.2)}
+.logo-ring img{width:86px;height:86px;object-fit:contain}
+.school{font-size:1em;font-weight:700;color:var(--gold);margin-bottom:4px}
+.sys{font-size:1.3em;font-weight:700;
+  background:linear-gradient(135deg,#c8d8f0,#fff);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sub{font-size:.74em;color:var(--muted);letter-spacing:.05em;margin-top:2px}
+
+/* Warning */
+.warn{background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);
+  border-radius:10px;padding:10px 16px;margin-bottom:18px;
+  font-size:.8em;color:#fcd34d;display:none}
+.warn a{color:#fbbf24;font-weight:700;text-decoration:none}
+
+/* Clock */
+.clock{text-align:center;margin-bottom:20px}
+.clock-time{font-size:2.2em;font-weight:700;color:#fff;letter-spacing:.04em;
+  text-shadow:0 0 20px rgba(67,97,238,.4)}
+.clock-date{font-size:.78em;color:var(--muted);margin-top:2px}
+
+/* Menu Cards */
+.menu{display:flex;flex-direction:column;gap:14px}
+.card{display:flex;align-items:center;gap:16px;padding:18px 20px;
+  text-decoration:none;border-radius:20px;
+  background:var(--glass);border:1px solid var(--border);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  color:var(--text);transition:all .3s cubic-bezier(.34,1.56,.64,1);
+  animation:up .5s ease both}
+.card:nth-child(1){animation-delay:.1s}
+.card:nth-child(2){animation-delay:.2s}
+.card:nth-child(3){animation-delay:.3s}
+.card:hover{transform:translateY(-4px) scale(1.01);background:rgba(255,255,255,.09)}
+.c-scan:hover  {border-color:rgba(16,185,129,.5);box-shadow:0 10px 35px rgba(16,185,129,.2)}
+.c-patrol:hover{border-color:rgba(245,166,35,.5);box-shadow:0 10px 35px rgba(245,166,35,.2)}
+.c-admin:hover {border-color:rgba(67,97,238,.5);box-shadow:0 10px 35px rgba(67,97,238,.2)}
+
+.icon{width:52px;height:52px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.c-scan   .icon{background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 18px rgba(16,185,129,.4)}
+.c-patrol .icon{background:linear-gradient(135deg,#f5a623,#e8951f);box-shadow:0 4px 18px rgba(245,166,35,.4)}
+.c-admin  .icon{background:linear-gradient(135deg,#4361ee,#3451d1);box-shadow:0 4px 18px rgba(67,97,238,.4)}
+
+.ct{flex:1;text-align:left}
+.ct-title{font-size:1em;font-weight:700;color:#f1f5f9;margin-bottom:2px}
+.ct-desc{font-size:.75em;color:var(--muted)}
+.arrow{font-size:20px;color:rgba(255,255,255,.2);transition:.3s}
+.card:hover .arrow{transform:translateX(5px);color:rgba(255,255,255,.6)}
+
+.footer{margin-top:32px;text-align:center;font-size:.7em;color:rgba(122,144,176,.45)}
+.footer span{color:rgba(245,166,35,.45)}
+
+@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hdr">
+    <div class="logo-ring">
+      <img src="https://i.ibb.co/fVFc00vF/SPK-3-D-PNG-Remove-bg-removebg-preview.png" alt="SPK"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <span style="display:none;font-size:40px">🏫</span>
+    </div>
+    <div class="school">โรงเรียนโซ่พิสัยพิทยาคม</div>
+    <div class="sys">ระบบลงเวลาปฏิบัติงาน</div>
+    <div class="sub">AI-Powered Patrol &amp; Time-Tracking v3.0</div>
+  </div>
+
+  <div id="warn" class="warn">⚠️ ยังไม่ได้ตั้งค่า API — <a href="admin.html">ไปตั้งค่า (Admin)</a></div>
+
+  <!-- Live Clock -->
+  <div class="clock">
+    <div class="clock-time" id="clkTime">--:--:--</div>
+    <div class="clock-date" id="clkDate">—</div>
+  </div>
+
+  <nav class="menu">
+    <a href="scan.html" class="card c-scan">
+      <div class="icon">📷</div>
+      <div class="ct">
+        <div class="ct-title">สแกนลงเวลา</div>
+        <div class="ct-desc">เข้างาน / ออกงาน — ใบหน้า + GPS</div>
+      </div>
+      <span class="arrow">›</span>
+    </a>
+
+    <a href="patrol.html" class="card c-patrol">
+      <div class="icon">🗺️</div>
+      <div class="ct">
+        <div class="ct-title">สแกนจุดตรวจ</div>
+        <div class="ct-desc">ตรวจจุด + รายงานเหตุการณ์ + ถ่ายภาพ</div>
+      </div>
+      <span class="arrow">›</span>
+    </a>
+
+    <a href="admin.html" class="card c-admin">
+      <div class="icon">🔐</div>
+      <div class="ct">
+        <div class="ct-title">Admin Dashboard</div>
+        <div class="ct-desc">รายงาน / ลงทะเบียน / ตั้งค่า (Admin เท่านั้น)</div>
+      </div>
+      <span class="arrow">›</span>
+    </a>
+  </nav>
+
+  <div class="footer"><span>โรงเรียนโซ่พิสัยพิทยาคม</span> · SPK Attendance System v3.0</div>
+</div>
+
+<script>
+// Clock
+function tick(){
+  const n=new Date();
+  document.getElementById('clkTime').textContent=n.toLocaleTimeString('th-TH',{hour12:false});
+  document.getElementById('clkDate').textContent=n.toLocaleDateString('th-TH',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+tick(); setInterval(tick,1000);
+
+// API check
+const url=localStorage.getItem('gasApiUrl')||(typeof GAS_API_URL!=='undefined'?GAS_API_URL:'');
+if(!url) document.getElementById('warn').style.display='block';
+</script>
+</body>
+</html>
